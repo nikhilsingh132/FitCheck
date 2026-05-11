@@ -1,65 +1,271 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import * as React from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Stack,
+  Typography,
+} from "@mui/material";
+import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import WardrobeGrid from "@/components/wardrobe-grid";
+import PageHeader from "@/components/page-header";
+import EmptyWardrobe from "@/components/empty-wardrobe";
+import { CATEGORIES } from "@/lib/constants";
+import { BRAND_GRADIENT } from "@/lib/theme";
+import { useDeleteItem } from "@/lib/use-delete-item";
+import { apiFetch } from "@/lib/api-client";
+import type { WardrobeItem } from "@/lib/types";
+
+export default function Page() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <React.Suspense
+      fallback={
+        <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
+          <CircularProgress />
+        </Box>
+      }
+    >
+      <WardrobePage />
+    </React.Suspense>
+  );
+}
+
+function WardrobePage() {
+  const params = useSearchParams();
+  const router = useRouter();
+  const activeCategory = params.get("category");
+
+  const [items, setItems] = React.useState<WardrobeItem[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiFetch("/api/wardrobe", { cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to load wardrobe");
+      setItems(json.items as WardrobeItem[]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    load();
+  }, [load]);
+
+  const visible = activeCategory
+    ? items.filter((i) => i.category === activeCategory)
+    : items;
+
+  const counts = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const it of items) {
+      if (!it.category) continue;
+      map.set(it.category, (map.get(it.category) ?? 0) + 1);
+    }
+    return map;
+  }, [items]);
+
+  const { deleteItem } = useDeleteItem({
+    onDeleted: (id) => setItems((prev) => prev.filter((i) => i.id !== id)),
+  });
+
+  if (loading) {
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center", py: 10 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Alert
+        severity="error"
+        action={
+          <Button onClick={load} size="small">
+            Retry
+          </Button>
+        }
+      >
+        {error}
+      </Alert>
+    );
+  }
+
+  if (items.length === 0) {
+    return <EmptyWardrobe />;
+  }
+
+  return (
+    // Bottom padding leaves room for the floating Upload button so the
+    // last row of wardrobe cards isn't covered by it on mobile.
+    <Box sx={{ pb: { xs: 12, sm: 13 } }}>
+      <PageHeader
+        eyebrow="Wardrobe"
+        title="Your closet"
+        subtitle={
+          <>
+            <strong>{items.length}</strong> item
+            {items.length === 1 ? "" : "s"} tagged by Gemini
+            {activeCategory ? (
+              <>
+                {" "}
+                · filtered by <strong>{activeCategory}</strong>
+              </>
+            ) : null}
+          </>
+        }
+        actions={
+          <>
+            <Button
+              component={Link}
+              href="/match"
+              variant="outlined"
+              startIcon={<AutoFixHighIcon />}
+              sx={{ flex: { xs: 1, md: "0 0 auto" } }}
+            >
+              Match a piece
+            </Button>
+            <Button
+              component={Link}
+              href="/dress-me"
+              startIcon={<AutoFixHighIcon />}
+              sx={{
+                background: BRAND_GRADIENT,
+                color: "white",
+                flex: { xs: 1, md: "0 0 auto" },
+                ":hover": {
+                  background: BRAND_GRADIENT,
+                  filter: "brightness(0.95)",
+                },
+              }}
+            >
+              Style me now
+            </Button>
+          </>
+        }
+      />
+
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{
+          mb: 3,
+          alignItems: "center",
+          overflowX: "auto",
+          pb: 1,
+          mx: { xs: -2, md: 0 },
+          px: { xs: 2, md: 0 },
+          scrollbarWidth: "none",
+          "&::-webkit-scrollbar": { display: "none" },
+        }}
+      >
+        <Chip
+          label={`All · ${items.length}`}
+          color={!activeCategory ? "primary" : "default"}
+          variant={!activeCategory ? "filled" : "outlined"}
+          onClick={() => router.push("/")}
+          sx={{ flexShrink: 0, fontWeight: 600 }}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+        {CATEGORIES.map((c) => {
+          const n = counts.get(c.value) ?? 0;
+          return (
+            <Chip
+              key={c.value}
+              label={`${c.label}${n ? ` · ${n}` : ""}`}
+              color={activeCategory === c.value ? "primary" : "default"}
+              variant={activeCategory === c.value ? "filled" : "outlined"}
+              onClick={() => router.push(`/?category=${c.value}`)}
+              disabled={n === 0 && c.value !== activeCategory}
+              sx={{ flexShrink: 0, fontWeight: 500 }}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          );
+        })}
+      </Stack>
+
+      {visible.length === 0 ? (
+        <Alert
+          severity="info"
+          action={
+            <Button
+              component={Link}
+              href="/upload"
+              size="small"
+              variant="contained"
+              startIcon={<CloudUploadIcon />}
+            >
+              Upload
+            </Button>
+          }
+        >
+          No items in {activeCategory}.
+        </Alert>
+      ) : (
+        <WardrobeGrid items={visible} onDelete={deleteItem} />
+      )}
+
+      {/* Floating bottom Upload button. Shown only when the user already
+          has items — the empty-wardrobe view has its own prominent CTA, so
+          showing this on top of it would be redundant. Mirrors the layout
+          of the /outfit page's "Try a different outfit" bar (fixed,
+          frosted, safe-area aware, full content-column width). */}
+      <Box
+        sx={{
+          position: "fixed",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: (t) => t.zIndex.appBar,
+          px: { xs: 2, md: 4 },
+          pt: 1.5,
+          pb: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
+          background:
+            "linear-gradient(to top, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.85) 60%, rgba(255,255,255,0) 100%)",
+          backdropFilter: "blur(10px)",
+          pointerEvents: "none",
+        }}
+      >
+        <Box
+          sx={{
+            maxWidth: 1400,
+            mx: "auto",
+            pointerEvents: "auto",
+          }}
+        >
+          <Button
+            component={Link}
+            href="/upload"
+            startIcon={<CloudUploadIcon />}
+            fullWidth
+            sx={{
+              background: BRAND_GRADIENT,
+              color: "white",
+              py: 1.4,
+              fontWeight: 600,
+              boxShadow: "0 10px 30px rgba(99,102,241,0.35)",
+              ":hover": {
+                background: BRAND_GRADIENT,
+                filter: "brightness(0.95)",
+              },
+            }}
           >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+            Upload outfits
+          </Button>
+        </Box>
+      </Box>
+    </Box>
   );
 }
