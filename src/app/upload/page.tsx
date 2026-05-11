@@ -19,7 +19,6 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutlineOutlined";
 import HourglassTopIcon from "@mui/icons-material/HourglassTop";
-import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
 import Link from "next/link";
 import imageCompression from "browser-image-compression";
@@ -49,8 +48,6 @@ type Job = {
   status: Status;
   error?: string;
   tags?: AnalyzedTags;
-  sizeKbBefore: number;
-  sizeKbAfter?: number;
 };
 
 const STATUS_LABEL: Record<Status, string> = {
@@ -154,7 +151,6 @@ export default function UploadPage() {
       file,
       previewUrl: URL.createObjectURL(file),
       status: "pending" as Status,
-      sizeKbBefore: Math.round(file.size / 1024),
     }));
     setJobs((prev) => [...prev, ...next]);
   };
@@ -170,17 +166,36 @@ export default function UploadPage() {
   // Prepare a single job for analysis: compress, store locally, return the
   // base64 payload. Throws on compression / IDB failures so the caller can
   // mark the job as errored without dragging the whole batch down.
+  //
+  // We compress hard with a fallback loop: browser-image-compression sometimes
+  // ignores its size target (e.g. on already-small inputs it can actually
+  // *grow* the file when re-encoding to WebP). If the first pass exceeds the
+  // hard cap we re-encode at progressively lower quality / dimensions until
+  // we're safely under it. This guarantees the server's base64 ceiling never
+  // bites the user regardless of source photo characteristics.
+  const HARD_CAP_BYTES = 200 * 1024;
+  const PASSES: { maxWidthOrHeight: number; initialQuality: number }[] = [
+    { maxWidthOrHeight: 1024, initialQuality: 0.7 },
+    { maxWidthOrHeight: 800, initialQuality: 0.6 },
+    { maxWidthOrHeight: 640, initialQuality: 0.5 },
+    { maxWidthOrHeight: 512, initialQuality: 0.4 },
+  ];
+
   const prepareJob = async (job: Job): Promise<string> => {
     updateJob(job.id, { status: "compressing", error: undefined });
-    const compressed = await imageCompression(job.file, {
-      maxSizeMB: 0.1,
-      maxWidthOrHeight: 1024,
-      useWebWorker: true,
-      fileType: "image/webp",
-      initialQuality: 0.8,
-    });
-    const sizeKbAfter = Math.round(compressed.size / 1024);
-    updateJob(job.id, { sizeKbAfter });
+
+    let compressed: Blob | null = null;
+    for (const pass of PASSES) {
+      compressed = await imageCompression(job.file, {
+        maxSizeMB: 0.15,
+        maxWidthOrHeight: pass.maxWidthOrHeight,
+        useWebWorker: true,
+        fileType: "image/webp",
+        initialQuality: pass.initialQuality,
+      });
+      if (compressed.size <= HARD_CAP_BYTES) break;
+    }
+    if (!compressed) throw new Error("Compression failed");
 
     updateJob(job.id, { status: "storing" });
     await putImage(job.id, compressed);
@@ -435,7 +450,7 @@ export default function UploadPage() {
       <PageHeader
         eyebrow="Upload"
         title="Add to your closet"
-        subtitle="Pick multiple photos. We compress them to WebP under ~100 KB, then ask Gemini to tag them — batched up to 5 per request for speed."
+        subtitle="Pick multiple photos. We compress them on-device, then ask Gemini to tag them — batched up to 5 per request for speed."
       />
 
       <Card
@@ -633,14 +648,6 @@ export default function UploadPage() {
                   sx={{ mb: 1, borderRadius: 1 }}
                 />
               )}
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                component="div"
-              >
-                {job.sizeKbBefore} KB
-                {job.sizeKbAfter ? ` → ${job.sizeKbAfter} KB (WebP)` : ""}
-              </Typography>
               {job.tags && (
                 <Stack
                   direction="row"
@@ -680,7 +687,7 @@ export default function UploadPage() {
               )}
               {job.status === "error" && (
                 <Alert severity="error" sx={{ mt: 1 }}>
-                  {job.error}
+                  Couldn&apos;t process this photo. Try another.
                 </Alert>
               )}
             </Box>
