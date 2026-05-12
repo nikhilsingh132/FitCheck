@@ -9,7 +9,6 @@ import {
   Card,
   Chip,
   CircularProgress,
-  Divider,
   Stack,
   Typography,
 } from "@mui/material";
@@ -244,25 +243,22 @@ export default function HistoryPage() {
 }
 
 function OutfitHistoryCard({ outfit }: { outfit: HydratedOutfit }) {
-  // Group items by category, ordered to match the rest of the app.
-  const grouped = React.useMemo(() => {
-    const map = new Map<string, WardrobeItem[]>();
-    for (const it of outfit.resolvedItems) {
-      const key = it.category ?? "Other";
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(it);
-    }
-    const ordered: { category: string; items: WardrobeItem[] }[] = [];
-    for (const cat of CATEGORY_ORDER) {
-      const items = map.get(cat);
-      if (items?.length) ordered.push({ category: cat, items });
-    }
-    // Surface any "Other" / unknown-category bucket at the end so nothing
-    // silently disappears if a category is renamed later.
-    if (map.has("Other")) {
-      ordered.push({ category: "Other", items: map.get("Other")! });
-    }
-    return ordered;
+  // Flatten items into a single row sorted by canonical category order.
+  // Previously we grouped each category into its own grid row, but a typical
+  // outfit only has 1 item per category — that left huge empty columns and
+  // forced the user to scroll a long ribbon of single tiles. Showing the
+  // whole outfit as one horizontal strip ("clothes laid out on a bed") is
+  // both more scannable and far better at filling the available width on
+  // desktop.
+  const orderedItems = React.useMemo(() => {
+    const indexOf = (cat: string | null) => {
+      if (!cat) return CATEGORY_ORDER.length;
+      const idx = CATEGORY_ORDER.indexOf(cat as (typeof CATEGORY_ORDER)[number]);
+      return idx === -1 ? CATEGORY_ORDER.length : idx;
+    };
+    return [...outfit.resolvedItems].sort(
+      (a, b) => indexOf(a.category) - indexOf(b.category),
+    );
   }, [outfit.resolvedItems]);
 
   const time = new Date(outfit.created_at).toLocaleTimeString(undefined, {
@@ -278,47 +274,59 @@ function OutfitHistoryCard({ outfit }: { outfit: HydratedOutfit }) {
       : "Matched outfit";
 
   return (
-    <Card sx={{ p: { xs: 1.75, sm: 2.25 } }}>
+    <Card sx={{ p: { xs: 1.5, sm: 2 } }}>
       <Stack
-        direction={{ xs: "column", sm: "row" }}
+        direction="row"
         spacing={1}
         sx={{
           mb: 1.25,
-          alignItems: { xs: "flex-start", sm: "center" },
+          alignItems: "center",
+          flexWrap: "wrap",
+          rowGap: 0.5,
         }}
       >
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography
-            variant="subtitle1"
-            sx={{ fontWeight: 700, fontSize: { xs: 15, sm: 16 } }}
-          >
-            {title}
-          </Typography>
-          <Stack
-            direction="row"
-            spacing={1}
-            sx={{ alignItems: "center", flexWrap: "wrap", rowGap: 0.5 }}
-          >
-            <Typography variant="caption" color="text.secondary">
-              {time}
-            </Typography>
-            <Chip
-              size="small"
-              label={outfit.source === "dress-me" ? "Dress Me" : "Match"}
-              variant="outlined"
-              sx={{ height: 20, "& .MuiChip-label": { px: 1, fontSize: 11 } }}
-            />
-            {outfit.vibe && (
-              <Chip
-                size="small"
-                label={outfit.vibe}
-                color="secondary"
-                variant="outlined"
-                sx={{ height: 20, "& .MuiChip-label": { px: 1, fontSize: 11 } }}
-              />
-            )}
-          </Stack>
-        </Box>
+        <Typography
+          variant="subtitle1"
+          sx={{
+            fontWeight: 700,
+            fontSize: { xs: 14, sm: 16 },
+            flex: 1,
+            minWidth: 0,
+          }}
+          noWrap
+        >
+          {title}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          {time}
+        </Typography>
+      </Stack>
+
+      <Stack
+        direction="row"
+        spacing={0.75}
+        sx={{
+          mb: outfit.reasoning ? 1.25 : 1.5,
+          alignItems: "center",
+          flexWrap: "wrap",
+          rowGap: 0.5,
+        }}
+      >
+        <Chip
+          size="small"
+          label={outfit.source === "dress-me" ? "Dress Me" : "Match"}
+          variant="outlined"
+          sx={{ height: 20, "& .MuiChip-label": { px: 1, fontSize: 11 } }}
+        />
+        {outfit.vibe && (
+          <Chip
+            size="small"
+            label={outfit.vibe}
+            color="secondary"
+            variant="outlined"
+            sx={{ height: 20, "& .MuiChip-label": { px: 1, fontSize: 11 } }}
+          />
+        )}
       </Stack>
 
       {outfit.reasoning && (
@@ -328,9 +336,10 @@ function OutfitHistoryCard({ outfit }: { outfit: HydratedOutfit }) {
           sx={{
             mb: 1.5,
             fontStyle: "italic",
+            fontSize: { xs: 12.5, sm: 13.5 },
             // Keep card heights bounded so the timeline scans cleanly.
             display: "-webkit-box",
-            WebkitLineClamp: 3,
+            WebkitLineClamp: { xs: 2, sm: 3 },
             WebkitBoxOrient: "vertical",
             overflow: "hidden",
           }}
@@ -339,59 +348,35 @@ function OutfitHistoryCard({ outfit }: { outfit: HydratedOutfit }) {
         </Typography>
       )}
 
-      {outfit.resolvedItems.length === 0 ? (
+      {orderedItems.length === 0 ? (
         <Alert severity="info" icon={<ImageNotSupportedIcon />}>
           All pieces from this outfit have been removed from your closet.
         </Alert>
       ) : (
-        <Stack spacing={1.25}>
-          {grouped.map(({ category, items }) => (
-            <Box key={category}>
-              <Stack
-                direction="row"
-                spacing={0.75}
-                sx={{ alignItems: "center", mb: 0.75 }}
-              >
-                <Divider sx={{ flex: 1 }} />
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: "text.secondary",
-                    fontWeight: 700,
-                    letterSpacing: 0.4,
-                    textTransform: "uppercase",
-                    fontSize: 10,
-                  }}
-                >
-                  {category}
-                </Typography>
-                <Divider sx={{ flex: 1 }} />
-              </Stack>
-              <Box
-                sx={{
-                  display: "grid",
-                  gap: { xs: 1, sm: 1.25 },
-                  gridTemplateColumns: {
-                    xs: "repeat(3, 1fr)",
-                    sm: "repeat(4, 1fr)",
-                    md: "repeat(6, 1fr)",
-                  },
-                }}
-              >
-                {items.map((it) => (
-                  <HistoryItemTile key={it.id} item={it} />
-                ))}
-              </Box>
-            </Box>
+        // Single flat row: 4 items per row on mobile, growing on bigger
+        // screens so a 4-6 piece outfit reads as one horizontal strip.
+        <Box
+          sx={{
+            display: "grid",
+            gap: { xs: 0.75, sm: 1 },
+            gridTemplateColumns: {
+              xs: "repeat(4, 1fr)",
+              sm: "repeat(6, 1fr)",
+              md: "repeat(8, 1fr)",
+            },
+          }}
+        >
+          {orderedItems.map((it) => (
+            <HistoryItemTile key={it.id} item={it} />
           ))}
-        </Stack>
+        </Box>
       )}
 
-      {outfit.missingCount > 0 && outfit.resolvedItems.length > 0 && (
+      {outfit.missingCount > 0 && orderedItems.length > 0 && (
         <Typography
           variant="caption"
           color="text.secondary"
-          sx={{ display: "block", mt: 1.25 }}
+          sx={{ display: "block", mt: 1 }}
         >
           {outfit.missingCount} piece
           {outfit.missingCount === 1 ? "" : "s"} no longer in your closet.
@@ -404,7 +389,9 @@ function OutfitHistoryCard({ outfit }: { outfit: HydratedOutfit }) {
 // Compact image-only tile for the history grid. We deliberately don't reuse
 // ItemCard here because /history is dense — one row may show 6+ items per
 // outfit across multiple outfits, and the full ItemCard's chips/text would
-// make the page noisy. The tooltip-on-hover keeps detail accessible.
+// make the page noisy. We overlay a small category chip at the top so the
+// outfit composition is still legible at a glance; the title attribute keeps
+// the longer style/color text accessible on hover.
 function HistoryItemTile({ item }: { item: WardrobeItem }) {
   const { url } = useLocalImage(item.id);
   const label = item.style ?? item.category ?? "Item";
@@ -416,14 +403,12 @@ function HistoryItemTile({ item }: { item: WardrobeItem }) {
         position: "relative",
         width: "100%",
         aspectRatio: "1 / 1",
-        borderRadius: 2,
+        borderRadius: 1.5,
         overflow: "hidden",
         bgcolor: "#f5f5f5",
         backgroundImage: url ? `url(${url})` : undefined,
         backgroundSize: "cover",
         backgroundPosition: "center",
-        display: "flex",
-        alignItems: "flex-end",
         boxShadow: "inset 0 0 0 1px rgba(15,23,42,0.06)",
       }}
     >
@@ -441,23 +426,26 @@ function HistoryItemTile({ item }: { item: WardrobeItem }) {
           <ImageNotSupportedIcon fontSize="small" />
         </Box>
       )}
-      {item.color && (
+      {item.category && (
         <Box
           sx={{
-            width: "100%",
-            p: 0.5,
-            background:
-              "linear-gradient(to top, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 100%)",
-            color: "white",
+            position: "absolute",
+            top: 4,
+            left: 4,
+            px: 0.75,
+            py: 0.25,
+            borderRadius: 0.75,
+            bgcolor: "rgba(255,255,255,0.92)",
+            color: "secondary.main",
+            fontSize: 9,
+            fontWeight: 700,
+            letterSpacing: 0.3,
+            textTransform: "uppercase",
+            lineHeight: 1.2,
+            backdropFilter: "blur(4px)",
           }}
         >
-          <Typography
-            variant="caption"
-            noWrap
-            sx={{ display: "block", fontSize: 10, fontWeight: 600 }}
-          >
-            {item.color}
-          </Typography>
+          {item.category}
         </Box>
       )}
     </Box>
