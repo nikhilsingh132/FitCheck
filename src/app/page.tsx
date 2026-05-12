@@ -111,8 +111,10 @@ function WardrobePage() {
 
   return (
     // Bottom padding leaves room for the floating Upload button so the
-    // last row of wardrobe cards isn't covered by it on mobile.
-    <Box sx={{ pb: { xs: 12, sm: 13 } }}>
+    // last row of wardrobe cards isn't covered by it on mobile. On desktop
+    // the floating bar is hidden (the sidebar handles Upload), so no extra
+    // bottom space is needed.
+    <Box sx={{ pb: { xs: 12, sm: 13, md: 0 } }}>
       <PageHeader
         eyebrow="Wardrobe"
         title="Your closet"
@@ -217,19 +219,21 @@ function WardrobePage() {
         <WardrobeGrid items={visible} onDelete={deleteItem} />
       )}
 
-      {/* Floating bottom Upload button. Shown only when the user already
-          has items — the empty-wardrobe view has its own prominent CTA, so
-          showing this on top of it would be redundant. Mirrors the layout
-          of the /outfit page's "Try a different outfit" bar (fixed,
-          frosted, safe-area aware, full content-column width). */}
+      {/* Floating bottom Upload button — mobile only.
+          On desktop (md+) the permanent sidebar already exposes "Upload" and
+          "Style me now", so a fixed bottom CTA is redundant and looks awkward
+          floating over the grid. On mobile there's no sidebar (it collapses
+          into a drawer) so we keep the full-width frosted bar as the primary
+          thumb-reachable CTA. */}
       <Box
         sx={{
+          display: { xs: "block", md: "none" },
           position: "fixed",
           left: 0,
           right: 0,
           bottom: 0,
           zIndex: (t) => t.zIndex.appBar,
-          px: { xs: 2, md: 4 },
+          px: 2,
           pt: 1.5,
           pb: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
           background:
@@ -238,13 +242,7 @@ function WardrobePage() {
           pointerEvents: "none",
         }}
       >
-        <Box
-          sx={{
-            maxWidth: 1400,
-            mx: "auto",
-            pointerEvents: "auto",
-          }}
-        >
+        <Box sx={{ pointerEvents: "auto" }}>
           <Button
             component={Link}
             href="/upload"
