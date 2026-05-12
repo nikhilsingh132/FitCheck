@@ -1,4 +1,4 @@
-# FitCheck — Your $0 AI Personal Stylist
+# FitCheck — Your AI Personal Stylist
 
 Upload photos of every piece in your closet, let **Gemini 2.5 Flash** auto-tag
 them, and get full outfit recommendations on demand — either by occasion
