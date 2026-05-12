@@ -44,6 +44,8 @@ export const DEFAULT_LIMITS = {
   "wardrobe-read": { perMinute: 60, perDay: 5000 },
   "wardrobe-write": { perMinute: 30, perDay: 800 },
   "wardrobe-delete": { perMinute: 30, perDay: 500 },
+  "outfits-read": { perMinute: 60, perDay: 2000 },
+  "outfits-write": { perMinute: 30, perDay: 500 },
   "visitor-ping": { perMinute: 5, perDay: 50 },
 } as const satisfies Record<string, RateLimitConfig>;
 

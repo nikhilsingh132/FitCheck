@@ -29,6 +29,7 @@ import HomeIcon from "@mui/icons-material/Home";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
 import JoinFullIcon from "@mui/icons-material/JoinFull";
+import HistoryIcon from "@mui/icons-material/History";
 import CheckroomIcon from "@mui/icons-material/Checkroom";
 import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -52,6 +53,7 @@ const PRIMARY_NAV: NavItem[] = [
   { label: "Upload", href: "/upload", icon: <CloudUploadIcon /> },
   { label: "Dress Me", href: "/dress-me", icon: <AutoFixHighIcon /> },
   { label: "Match My Selection", href: "/match", icon: <JoinFullIcon /> },
+  { label: "History", href: "/history", icon: <HistoryIcon /> },
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {

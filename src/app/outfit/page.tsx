@@ -80,10 +80,39 @@ function OutfitResultContent() {
   const [hydrated, setHydrated] = React.useState(false);
   const [shuffling, setShuffling] = React.useState(false);
 
+  // Tracks which outfit signature we've already saved to history. Without
+  // this, React strict mode (double-effect in dev) and any re-render of
+  // this component would post the same outfit twice. The signature is just
+  // the joined item ids — different items = different outfit = save again.
+  const savedSigRef = React.useRef<string | null>(null);
+
   React.useEffect(() => {
     setOutfit(readLatestOutfit());
     setHydrated(true);
   }, []);
+
+  // Auto-save outfit history. Runs whenever the visible outfit changes
+  // (initial hydration, post-shuffle). Failures are silent — history is a
+  // nice-to-have and we never want it to disrupt the styling flow.
+  React.useEffect(() => {
+    if (!outfit || outfit.items.length === 0) return;
+    const sig = outfit.items.map((i) => i.id).join(",");
+    if (savedSigRef.current === sig) return;
+    savedSigRef.current = sig;
+
+    void apiFetch("/api/outfits", {
+      method: "POST",
+      json: {
+        source,
+        occasion: outfit.occasion ?? null,
+        vibe: outfit.vibe ?? null,
+        reasoning: outfit.reasoning ?? null,
+        item_ids: outfit.items.map((i) => i.id),
+      },
+    }).catch(() => {
+      // Intentionally swallow: history is best-effort.
+    });
+  }, [outfit, source]);
 
   const { deleteItem } = useDeleteItem({
     onDeleted: (id) => {
@@ -206,9 +235,10 @@ function OutfitResultContent() {
 
   return (
     // pb leaves room for the fixed shuffle bar at the bottom so the last
-    // outfit card never gets hidden behind it. Tuned for the bar's ~72px
-    // height plus a little breathing room.
-    <Box sx={{ pb: { xs: 12, sm: 13 } }}>
+    // outfit card never gets hidden behind it. On desktop (md+) the bar is
+    // hidden in favor of an inline shuffle button next to "Back", so no
+    // extra bottom padding is needed there.
+    <Box sx={{ pb: { xs: 12, sm: 13, md: 0 } }}>
       <StylingOverlay
         open={shuffling}
         title="Restyling your outfit"
@@ -241,6 +271,31 @@ function OutfitResultContent() {
         >
           {meta.backLabel}
         </Button>
+        {/* Inline shuffle CTA — desktop only. On mobile the same action lives
+            in the fixed bottom bar where it's thumb-reachable, so we hide it
+            here to avoid two competing buttons on a small screen. */}
+        <Button
+          onClick={shuffle}
+          startIcon={<ShuffleIcon />}
+          disabled={!canShuffle || shuffling}
+          sx={{
+            display: { xs: "none", md: "inline-flex" },
+            ml: "auto !important",
+            background: BRAND_GRADIENT,
+            color: "white",
+            py: 1,
+            px: 2.25,
+            fontWeight: 600,
+            boxShadow: "0 8px 22px rgba(99,102,241,0.3)",
+            ":hover": {
+              background: BRAND_GRADIENT,
+              filter: "brightness(0.95)",
+            },
+            "&.Mui-disabled": { background: "#e2e8f0", color: "#94a3b8" },
+          }}
+        >
+          {shuffling ? "Restyling…" : "Try a different outfit"}
+        </Button>
       </Stack>
 
       <PageHeader
@@ -263,18 +318,19 @@ function OutfitResultContent() {
         onDelete={deleteItem}
       />
 
-      {/* Fixed bottom action bar so "Try a different outfit" is always
-          reachable without scrolling — important on long outfit pages on
-          mobile. We pin to the viewport, blur the background behind it,
-          and respect the iOS safe-area inset. */}
+      {/* Fixed bottom action bar — mobile only. Pins "Try a different outfit"
+          to the thumb zone on long outfit pages, respecting iOS safe-area.
+          On desktop the same action sits inline next to the back button at
+          the top of the page, so this bar is hidden to keep the layout calm. */}
       <Box
         sx={{
+          display: { xs: "block", md: "none" },
           position: "fixed",
           left: 0,
           right: 0,
           bottom: 0,
           zIndex: (t) => t.zIndex.appBar,
-          px: { xs: 2, md: 4 },
+          px: 2,
           pt: 1.5,
           pb: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
           background:
@@ -283,13 +339,7 @@ function OutfitResultContent() {
           pointerEvents: "none",
         }}
       >
-        <Box
-          sx={{
-            maxWidth: 1400,
-            mx: "auto",
-            pointerEvents: "auto",
-          }}
-        >
+        <Box sx={{ pointerEvents: "auto" }}>
           <Button
             onClick={shuffle}
             startIcon={<ShuffleIcon />}
