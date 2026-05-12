@@ -22,6 +22,7 @@ import {
   type GenderPref,
 } from "@/lib/gender";
 import { BRAND_GRADIENT } from "@/lib/theme";
+import { useVisitorName } from "@/components/visitor-name";
 
 type GenderContextValue = {
   /** null until the user has picked. Components should treat null as "unisex". */
@@ -46,12 +47,28 @@ export function GenderPrefProvider({ children }: { children: React.ReactNode }) 
   // hydration flicker — only decide what to render after the client mount.
   const [hydrated, setHydrated] = React.useState(false);
 
+  // The visitor-name dialog runs ahead of us on first visit. We never want
+  // two blocking modals stacked, so this provider tracks whether IT thinks
+  // gender should be asked, and the actual <Dialog open=…> defers to the
+  // name flow until that's finished.
+  const { name: visitorName, prompting: namePrompting } = useVisitorName();
+
   React.useEffect(() => {
     const stored = getStoredGender();
     setGenderState(stored);
     setHydrated(true);
     if (!stored) setOpen(true);
   }, []);
+
+  // Once a returning user finishes the name dialog (or already had a name
+  // stored), `namePrompting` flips to false. If they still don't have a
+  // gender, the gender dialog opens here — never simultaneously with name.
+  React.useEffect(() => {
+    if (!hydrated) return;
+    if (namePrompting) return;
+    if (visitorName === null) return;
+    if (gender === null) setOpen(true);
+  }, [hydrated, namePrompting, visitorName, gender]);
 
   const handleSet = React.useCallback((pref: GenderPref) => {
     setStoredGender(pref);
@@ -73,7 +90,10 @@ export function GenderPrefProvider({ children }: { children: React.ReactNode }) 
       {children}
       {hydrated && (
         <GenderPickerDialog
-          open={open}
+          // Gate on namePrompting so we never stack two modals: if the
+          // user is still mid-name-entry, gender stays hidden. As soon as
+          // they submit a name, this re-renders with open=true.
+          open={open && !namePrompting}
           current={gender}
           dismissible={gender !== null}
           onClose={() => setOpen(false)}

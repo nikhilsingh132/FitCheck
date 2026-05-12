@@ -47,6 +47,7 @@ export const DEFAULT_LIMITS = {
   "outfits-read": { perMinute: 60, perDay: 2000 },
   "outfits-write": { perMinute: 30, perDay: 500 },
   "visitor-ping": { perMinute: 5, perDay: 50 },
+  "visitor-name": { perMinute: 3, perDay: 10 },
 } as const satisfies Record<string, RateLimitConfig>;
 
 export type RateLimitRoute = keyof typeof DEFAULT_LIMITS;
