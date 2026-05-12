@@ -29,28 +29,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, skipped: true });
     }
 
+    // Single-statement upsert-and-increment via a SECURITY DEFINER function.
+    // The previous two-step approach (`update last_seen` → maybe `insert`)
+    // had two bugs: (1) it never actually incremented `visits` on the update
+    // path because PostgREST .update() can't reference a column in its own
+    // SET clause, so every returning visitor was stuck at visits=1, and
+    // (2) two parallel pings could both miss the existing row and race to
+    // insert. The RPC fixes both atomically. See the corresponding migration
+    // 2026_05_12_fix_visitor_increment.sql.
     const supabase = getSupabaseServer();
-    const now = new Date().toISOString();
-
-    // Try to bump last_seen + visits on an existing row first; if no row was
-    // updated, insert a new one. We avoid `upsert` because Postgres can't
-    // increment a column in a single upsert without an RPC.
-    const { data: updated, error: updateErr } = await supabase
-      .from("visitors")
-      .update({ last_seen: now })
-      .eq("device_id", deviceId)
-      .select("device_id");
-
-    if (updateErr) throw updateErr;
-
-    if (!updated || updated.length === 0) {
-      const { error: insertErr } = await supabase
-        .from("visitors")
-        .insert({ device_id: deviceId, first_seen: now, last_seen: now, visits: 1 });
-      // Race-safe: if another request inserted the row a microsecond ago,
-      // ignore the duplicate-key error.
-      if (insertErr && insertErr.code !== "23505") throw insertErr;
-    }
+    const { error: rpcErr } = await supabase.rpc("increment_visitor", {
+      p_device_id: deviceId,
+    });
+    if (rpcErr) throw rpcErr;
 
     return NextResponse.json({ ok: true });
   } catch (err) {
