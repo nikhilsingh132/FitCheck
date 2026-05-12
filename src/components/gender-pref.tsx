@@ -22,12 +22,15 @@ import {
   type GenderPref,
 } from "@/lib/gender";
 import { BRAND_GRADIENT } from "@/lib/theme";
-import { useVisitorName } from "@/components/visitor-name";
 
 type GenderContextValue = {
-  /** null until the user has picked. Components should treat null as "unisex". */
+  /** null until hydration finishes OR the user hasn't picked yet. Components
+   *  should treat null as "unisex" for prompt building. */
   gender: GenderPref | null;
-  /** Programmatically open the picker (e.g. from a header dropdown). */
+  /** True once we've read localStorage on the client. Used by the
+   *  onboarding flow to decide whether the first-visit modal should show. */
+  hydrated: boolean;
+  /** Programmatically open the standalone picker (header chip → "Change"). */
   openPicker: () => void;
   /** Update the preference. Persists to localStorage. */
   setGender: (pref: GenderPref) => void;
@@ -36,9 +39,10 @@ type GenderContextValue = {
 const GenderContext = React.createContext<GenderContextValue | null>(null);
 
 /**
- * Wraps the app so any component can read/change the styling-audience
- * preference. Auto-opens a first-visit picker the first time we don't find a
- * stored value.
+ * Pure state container + standalone picker for the styling audience.
+ * The blocking first-visit modal lives in <OnboardingDialog> (providers.tsx)
+ * where it's combined with the visitor-name capture into one step. This
+ * provider only handles the "change my preference later" flow now.
  */
 export function GenderPrefProvider({ children }: { children: React.ReactNode }) {
   const [gender, setGenderState] = React.useState<GenderPref | null>(null);
@@ -47,28 +51,10 @@ export function GenderPrefProvider({ children }: { children: React.ReactNode }) 
   // hydration flicker — only decide what to render after the client mount.
   const [hydrated, setHydrated] = React.useState(false);
 
-  // The visitor-name dialog runs ahead of us on first visit. We never want
-  // two blocking modals stacked, so this provider tracks whether IT thinks
-  // gender should be asked, and the actual <Dialog open=…> defers to the
-  // name flow until that's finished.
-  const { name: visitorName, prompting: namePrompting } = useVisitorName();
-
   React.useEffect(() => {
-    const stored = getStoredGender();
-    setGenderState(stored);
+    setGenderState(getStoredGender());
     setHydrated(true);
-    if (!stored) setOpen(true);
   }, []);
-
-  // Once a returning user finishes the name dialog (or already had a name
-  // stored), `namePrompting` flips to false. If they still don't have a
-  // gender, the gender dialog opens here — never simultaneously with name.
-  React.useEffect(() => {
-    if (!hydrated) return;
-    if (namePrompting) return;
-    if (visitorName === null) return;
-    if (gender === null) setOpen(true);
-  }, [hydrated, namePrompting, visitorName, gender]);
 
   const handleSet = React.useCallback((pref: GenderPref) => {
     setStoredGender(pref);
@@ -79,10 +65,11 @@ export function GenderPrefProvider({ children }: { children: React.ReactNode }) 
   const value = React.useMemo<GenderContextValue>(
     () => ({
       gender,
+      hydrated,
       setGender: handleSet,
       openPicker: () => setOpen(true),
     }),
-    [gender, handleSet],
+    [gender, hydrated, handleSet],
   );
 
   return (
@@ -90,12 +77,11 @@ export function GenderPrefProvider({ children }: { children: React.ReactNode }) 
       {children}
       {hydrated && (
         <GenderPickerDialog
-          // Gate on namePrompting so we never stack two modals: if the
-          // user is still mid-name-entry, gender stays hidden. As soon as
-          // they submit a name, this re-renders with open=true.
-          open={open && !namePrompting}
+          open={open}
           current={gender}
-          dismissible={gender !== null}
+          // Always dismissible — this dialog is only opened by the header
+          // chip when the user explicitly wants to change the preference.
+          dismissible
           onClose={() => setOpen(false)}
           onPick={handleSet}
         />
@@ -123,6 +109,89 @@ const DESCRIPTIONS: Record<GenderPref, string> = {
   women: "Outfits, vibe words, and reasoning tuned for women's fashion.",
   unisex: "Use the whole closet, no gender bias. Great if you share an account.",
 };
+
+/**
+ * The vertical stack of Men / Women / Unisex selection cards. Extracted so
+ * the combined onboarding dialog can reuse the exact same visual without
+ * duplicating the option markup. `compact` shrinks padding for the embedded
+ * onboarding context where the dialog already has a header.
+ */
+export function GenderOptionsList({
+  current,
+  onPick,
+  compact,
+}: {
+  current: GenderPref | null;
+  onPick: (pref: GenderPref) => void;
+  compact?: boolean;
+}) {
+  return (
+    <Stack spacing={compact ? 1 : 1.5}>
+      {GENDER_OPTIONS.map((opt) => {
+        const active = current === opt.value;
+        return (
+          <Card
+            key={opt.value}
+            variant="outlined"
+            sx={{
+              borderColor: active ? "secondary.main" : undefined,
+              borderWidth: active ? 2 : 1,
+              background: active
+                ? "linear-gradient(135deg, rgba(99,102,241,0.06) 0%, rgba(168,85,247,0.06) 100%)"
+                : undefined,
+            }}
+          >
+            <CardActionArea
+              onClick={() => onPick(opt.value)}
+              sx={{ p: compact ? 1.5 : 2 }}
+            >
+              <Stack
+                direction="row"
+                spacing={compact ? 1.5 : 2}
+                sx={{ alignItems: "center" }}
+              >
+                <Box
+                  sx={{
+                    width: compact ? 38 : 44,
+                    height: compact ? 38 : 44,
+                    borderRadius: 2,
+                    background: active
+                      ? BRAND_GRADIENT
+                      : "rgba(99,102,241,0.10)",
+                    color: active ? "white" : "secondary.main",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  {ICONS[opt.value]}
+                </Box>
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography
+                    variant="subtitle1"
+                    sx={{
+                      fontWeight: 700,
+                      fontSize: compact ? 14.5 : 16,
+                      lineHeight: 1.25,
+                    }}
+                  >
+                    {opt.label}
+                  </Typography>
+                  {!compact && (
+                    <Typography variant="caption" color="text.secondary">
+                      {DESCRIPTIONS[opt.value]}
+                    </Typography>
+                  )}
+                </Box>
+              </Stack>
+            </CardActionArea>
+          </Card>
+        );
+      })}
+    </Stack>
+  );
+}
 
 function GenderPickerDialog({
   open,
@@ -193,61 +262,7 @@ function GenderPickerDialog({
       </Box>
 
       <DialogContent sx={{ p: { xs: 2, sm: 3 } }}>
-        <Stack spacing={1.5}>
-          {GENDER_OPTIONS.map((opt) => {
-            const active = current === opt.value;
-            return (
-              <Card
-                key={opt.value}
-                variant="outlined"
-                sx={{
-                  borderColor: active ? "secondary.main" : undefined,
-                  borderWidth: active ? 2 : 1,
-                  background: active
-                    ? "linear-gradient(135deg, rgba(99,102,241,0.06) 0%, rgba(168,85,247,0.06) 100%)"
-                    : undefined,
-                }}
-              >
-                <CardActionArea
-                  onClick={() => onPick(opt.value)}
-                  sx={{ p: 2 }}
-                >
-                  <Stack
-                    direction="row"
-                    spacing={2}
-                    sx={{ alignItems: "center" }}
-                  >
-                    <Box
-                      sx={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 2,
-                        background: active
-                          ? BRAND_GRADIENT
-                          : "rgba(99,102,241,0.10)",
-                        color: active ? "white" : "secondary.main",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                      }}
-                    >
-                      {ICONS[opt.value]}
-                    </Box>
-                    <Box sx={{ minWidth: 0, flex: 1 }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                        {opt.label}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {DESCRIPTIONS[opt.value]}
-                      </Typography>
-                    </Box>
-                  </Stack>
-                </CardActionArea>
-              </Card>
-            );
-          })}
-        </Stack>
+        <GenderOptionsList current={current} onPick={onPick} />
 
         {dismissible && (
           <Box sx={{ textAlign: "right", mt: 2 }}>

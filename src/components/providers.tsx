@@ -8,6 +8,7 @@ import { SnackbarProvider } from "notistack";
 import theme from "@/lib/theme";
 import { GenderPrefProvider } from "@/components/gender-pref";
 import { VisitorNameProvider } from "@/components/visitor-name";
+import OnboardingDialog from "@/components/onboarding-dialog";
 
 function ResponsiveSnackbarProvider({ children }: { children: React.ReactNode }) {
   const muiTheme = useTheme();
@@ -40,13 +41,15 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       <ThemeProvider theme={theme}>
         <CssBaseline />
         <ResponsiveSnackbarProvider>
-          {/* VisitorNameProvider is outermost so its blocking first-visit
-              dialog is gated independently of styling preferences. The
-              GenderPrefProvider reads useVisitorName().prompting and holds
-              back its own dialog until the name has been captured, so the
-              user only ever sees ONE blocking modal at a time. */}
+          {/* Onboarding mounts inside both providers so the combined
+              first-visit dialog can read name + gender from the same tree.
+              The dialog renders nothing once both values are stored, so
+              returning users incur zero overhead. */}
           <VisitorNameProvider>
-            <GenderPrefProvider>{children}</GenderPrefProvider>
+            <GenderPrefProvider>
+              {children}
+              <OnboardingDialog />
+            </GenderPrefProvider>
           </VisitorNameProvider>
         </ResponsiveSnackbarProvider>
       </ThemeProvider>
